@@ -2,6 +2,7 @@ import ezdxf
 import os
 import re
 import math
+import unicodedata
 from ezdxf.math import BoundingBox
 from ezdxf import colors
 
@@ -170,6 +171,58 @@ def set_layer0_to_yellow(doc):
             print(f"  * Camada '{layer_name}' atualizada para cor {get_aci_color_name(COLOR_LAYER_0)}.")
     except Exception as e:
         print(f"Aviso: não foi possível ajustar a cor da camada '0': {e}")
+
+def _normalize_layer_name(name: str) -> str:
+    """Normalize a layer name for fuzzy matching: lower-case, remove spaces/hyphens/underscores
+    and strip diacritics.
+    """
+    if not name:
+        return ''
+    # strip diacritics
+    nfkd = unicodedata.normalize('NFKD', name)
+    only_ascii = ''.join([c for c in nfkd if not unicodedata.combining(c)])
+    cleaned = only_ascii.replace(' ', '').replace('-', '').replace('_', '').lower()
+    return cleaned
+
+
+def set_g_symbol_to_yellow(doc):
+    """Ensure any G-SYMBOL-like layer is set to the yellow ACI used for layer 0.
+
+    This function will search for existing layers whose normalized name matches
+    common variants (e.g. 'G SIMBOLO', 'G-SYMBOL', 'G_SIMBOLO') and set their
+    color to COLOR_LAYER_0. If none are found, it will create the canonical
+    layer name 'G SIMBOLO' and set its color.
+    """
+    candidates = ['G-SYMBOL', 'G SIMBOLO', 'G_SIMBOLO', 'G-SIMBOLO', 'GSYMBOL']
+    normalized_candidates = {_normalize_layer_name(c): c for c in candidates}
+
+    found = []
+    try:
+        for layer in doc.layers:
+            try:
+                lname = layer.dxf.name
+            except Exception:
+                continue
+            nl = _normalize_layer_name(lname)
+            if nl in normalized_candidates:
+                # recolor this existing layer
+                try:
+                    doc.layers.get(lname).dxf.color = COLOR_LAYER_0
+                    print(f"  * Camada existente '{lname}' atualizada para cor {get_aci_color_name(COLOR_LAYER_0)}.")
+                    found.append(lname)
+                except Exception as e:
+                    print(f"Aviso: não foi possível pintar a camada '{lname}': {e}")
+        if not found:
+            # create a friendly Portuguese-named layer by default
+            default_name = 'G SIMBOLO'
+            try:
+                print(f"  + Nenhuma camada G-SYMBOL encontrada; criando '{default_name}' com cor {get_aci_color_name(COLOR_LAYER_0)}.")
+                doc.layers.new(name=default_name, dxfattribs={'color': COLOR_LAYER_0})
+                found.append(default_name)
+            except Exception as e:
+                print(f"Aviso: não foi possível criar a camada '{default_name}': {e}")
+    except Exception as e:
+        print(f"Aviso: erro ao procurar camadas G-SYMBOL: {e}")
 
 def process_cotas_and_texts(doc, msp, processed_handles):
     """Move DIMENSION (cotas rotacionadas incluídas) para 'COTAS' e MTEXT para 'TEXTO'.
@@ -345,6 +398,8 @@ def reestruturar_desenho_final(input_path: str, output_path: str, *, protect_by_
 
     print("Iniciando reestruturação com hierarquia profissional.")
     set_layer0_to_yellow(doc)
+    # Ensure G-SYMBOL layer is highlighted like layer 0 where needed
+    set_g_symbol_to_yellow(doc)
     processed_handles = set()
     moved_setas = []
     moved_setas_details = []

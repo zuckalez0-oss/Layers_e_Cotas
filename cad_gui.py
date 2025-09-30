@@ -220,7 +220,7 @@ class App:
             if not self._last_outputs:
                 messagebox.showinfo('Info', 'Nenhum relatório de handles disponível ainda.')
                 return
-            # pick last value
+            # pick last values
             last = list(self._last_outputs.values())[-1]
             if last and os.path.exists(last):
                 if sys.platform == 'win32':
